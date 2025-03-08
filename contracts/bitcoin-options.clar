@@ -214,3 +214,93 @@
     (var-set next-option-id (+ option-id u1))
     (ok option-id))
 )
+
+;; Exercise Option
+(define-public (exercise-option (option-id uint))
+    (let (
+        (option (unwrap! (map-get? options option-id) ERR_OPTION_NOT_FOUND))
+        (current-price (unwrap! (get-current-btc-price) ERR_INVALID_PRICE))
+    )
+    (asserts! (is-eq (get holder option) tx-sender) ERR_NOT_AUTHORIZED)
+    (try! (check-expiry option-id))
+    (asserts! (is-eq (get status option) "ACTIVE") ERR_OPTION_NOT_EXERCISABLE)
+    
+    (if (is-eq (get option-type option) "CALL")
+        (if (> current-price (get strike-price option))
+            (let (
+                (profit (- current-price (get strike-price option)))
+            )
+            ;; Transfer profit to option holder
+            (try! (update-user-balance tx-sender profit false))
+            ;; Update option status
+            (map-set options option-id 
+                (merge option {status: "EXERCISED"}))
+            (ok true))
+            ERR_OPTION_NOT_EXERCISABLE)
+        ;; PUT option logic
+        (if (< current-price (get strike-price option))
+            (let (
+                (profit (- (get strike-price option) current-price))
+            )
+            ;; Transfer profit to option holder
+            (try! (update-user-balance tx-sender profit false))
+            ;; Update option status
+            (map-set options option-id 
+                (merge option {status: "EXERCISED"}))
+            (ok true))
+            ERR_OPTION_NOT_EXERCISABLE))
+    )
+)
+
+;; Expire Option
+(define-public (expire-option (option-id uint))
+    (let (
+        (option (unwrap! (map-get? options option-id) ERR_OPTION_NOT_FOUND))
+    )
+    (asserts! (> block-height (get expiry option)) ERR_OPTION_NOT_EXPIRED)
+    (asserts! (is-eq (get status option) "ACTIVE") ERR_OPTION_NOT_EXERCISABLE)
+    
+    ;; Return collateral to creator
+    (try! (update-user-balance (get creator option) (get collateral option) false))
+    
+    ;; Update option status
+    (map-set options option-id 
+        (merge option {status: "EXPIRED"}))
+    (ok true))
+)
+
+;; Read-Only Functions
+
+(define-read-only (get-option (option-id uint))
+    (map-get? options option-id)
+)
+
+(define-read-only (get-user-balance (user principal))
+    (default-to {sbtc-balance: u0, locked-collateral: u0} 
+        (map-get? user-balances user))
+)
+
+(define-read-only (get-platform-fee)
+    (var-get platform-fee)
+)
+
+;; Administrative Functions
+
+(define-public (set-platform-fee (new-fee uint))
+    (begin
+        (asserts! (is-contract-owner) ERR_NOT_AUTHORIZED)
+        ;; Fee must be between 0 and MAX_FEE_BASIS_POINTS (100%)
+        (asserts! (<= new-fee MAX_FEE_BASIS_POINTS) ERR_INVALID_PARAMETER)
+        (var-set platform-fee new-fee)
+        (ok true))
+)
+
+(define-public (set-min-collateral-ratio (new-ratio uint))
+    (begin
+        (asserts! (is-contract-owner) ERR_NOT_AUTHORIZED)
+        ;; Ratio must be between 100% and MAX_COLLATERAL_RATIO
+        (asserts! (and (>= new-ratio u100)
+                      (<= new-ratio MAX_COLLATERAL_RATIO)) ERR_INVALID_PARAMETER)
+        (var-set min-collateral-ratio new-ratio)
+        (ok true))
+)
