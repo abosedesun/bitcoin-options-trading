@@ -80,7 +80,7 @@
         (asserts! (is-eq tx-sender (var-get oracle-address)) ERR_NOT_AUTHORIZED)
         (asserts! (> new-price u0) ERR_INVALID_PRICE)
         (var-set btc-price new-price)
-        (var-set price-last-updated block-height)
+        (var-set price-last-updated stacks-block-height)
         (ok true))
 )
 
@@ -92,7 +92,7 @@
         (validity-window (var-get price-validity-window))
     )
     (asserts! (> price u0) ERR_INVALID_PRICE)
-    (asserts! (< (- block-height last-updated) validity-window) ERR_STALE_PRICE)
+    (asserts! (< (- stacks-block-height last-updated) validity-window) ERR_STALE_PRICE)
     (ok price))
 )
 
@@ -127,7 +127,7 @@
 (define-private (check-expiry (option-id uint))
     (let (
         (option (unwrap! (map-get? options option-id) ERR_OPTION_NOT_FOUND))
-        (current-height block-height)
+        (current-height stacks-block-height)
     )
     (if (> current-height (get expiry option))
         ERR_OPTION_EXPIRED
@@ -182,8 +182,8 @@
     (asserts! (or (is-eq option-type "CALL") (is-eq option-type "PUT")) 
               ERR_NOT_AUTHORIZED)
     (asserts! (>= strike-price u0) ERR_INVALID_STRIKE_PRICE)
-    (asserts! (and (> expiry block-height)
-                   (<= (- expiry block-height) u5200)) ERR_INVALID_EXPIRY) ;; Max 1 month expiry
+    (asserts! (and (> expiry stacks-block-height)
+                   (<= (- expiry stacks-block-height) u5200)) ERR_INVALID_EXPIRY) ;; Max 1 month expiry
     (asserts! (and (>= amount MIN_DEPOSIT_AMOUNT)
                    (<= amount MAX_DEPOSIT_AMOUNT)) ERR_INVALID_AMOUNT)
     (asserts! (>= (get sbtc-balance user-balance) required-collateral) 
@@ -257,7 +257,7 @@
     (let (
         (option (unwrap! (map-get? options option-id) ERR_OPTION_NOT_FOUND))
     )
-    (asserts! (> block-height (get expiry option)) ERR_OPTION_NOT_EXPIRED)
+    (asserts! (> stacks-block-height (get expiry option)) ERR_OPTION_NOT_EXPIRED)
     (asserts! (is-eq (get status option) "ACTIVE") ERR_OPTION_NOT_EXERCISABLE)
     
     ;; Return collateral to creator
