@@ -71,3 +71,84 @@
         locked-collateral: uint
     }
 )
+
+;; Oracle Functions
+
+;; Update BTC Price
+(define-public (update-btc-price (new-price uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get oracle-address)) ERR_NOT_AUTHORIZED)
+        (asserts! (> new-price u0) ERR_INVALID_PRICE)
+        (var-set btc-price new-price)
+        (var-set price-last-updated block-height)
+        (ok true))
+)
+
+;; Get Current BTC Price
+(define-read-only (get-current-btc-price)
+    (let (
+        (price (var-get btc-price))
+        (last-updated (var-get price-last-updated))
+        (validity-window (var-get price-validity-window))
+    )
+    (asserts! (> price u0) ERR_INVALID_PRICE)
+    (asserts! (< (- block-height last-updated) validity-window) ERR_STALE_PRICE)
+    (ok price))
+)
+
+;; Set Oracle Address
+(define-public (set-oracle-address (new-oracle principal))
+    (begin
+        (asserts! (is-contract-owner) ERR_NOT_AUTHORIZED)
+        ;; Check that new oracle address is not null/zero address
+        (asserts! (not (is-eq new-oracle 'SP000000000000000000002Q6VF78)) ERR_INVALID_PARAMETER)
+        (var-set oracle-address new-oracle)
+        (ok true))
+)
+
+;; Set Price Validity Window
+(define-public (set-price-validity-window (new-window uint))
+    (begin
+        (asserts! (is-contract-owner) ERR_NOT_AUTHORIZED)
+        (asserts! (and (>= new-window MIN_VALIDITY_WINDOW) 
+                      (<= new-window MAX_VALIDITY_WINDOW)) ERR_INVALID_PARAMETER)
+        (var-set price-validity-window new-window)
+        (ok true))
+)
+
+;; Private Functions
+
+;; Authorization Check
+(define-private (is-contract-owner)
+    (is-eq tx-sender CONTRACT_OWNER)
+)
+
+;; Option Expiry Check
+(define-private (check-expiry (option-id uint))
+    (let (
+        (option (unwrap! (map-get? options option-id) ERR_OPTION_NOT_FOUND))
+        (current-height block-height)
+    )
+    (if (> current-height (get expiry option))
+        ERR_OPTION_EXPIRED
+        (ok true)
+    ))
+)
+
+;; Balance Management
+(define-private (update-user-balance (user principal) (delta uint) (is-subtract bool))
+    (let (
+        (current-balance (default-to {sbtc-balance: u0, locked-collateral: u0} 
+                        (map-get? user-balances user)))
+        (current-sbtc (get sbtc-balance current-balance))
+        (new-balance (if is-subtract
+                        (begin
+                            (asserts! (>= current-sbtc delta) ERR_INSUFFICIENT_BALANCE)
+                            (- current-sbtc delta))
+                        (+ current-sbtc delta)))
+    )
+    (ok (map-set user-balances 
+        user 
+        (merge current-balance {sbtc-balance: new-balance})))
+    )
+)
